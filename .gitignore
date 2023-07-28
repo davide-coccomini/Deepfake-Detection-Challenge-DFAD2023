@@ -1,0 +1,7 @@
+__pycache__
+datasets/laion
+datasets/test_set
+datasets/*.csv
+datasets/*.tar.gz
+stable_diffusion/models/ldm/*
+glide_model_cache
