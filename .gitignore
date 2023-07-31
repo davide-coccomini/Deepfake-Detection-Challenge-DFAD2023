@@ -3,5 +3,6 @@ datasets/laion
 datasets/test_set
 datasets/*.csv
 datasets/*.tar.gz
+datasets
 stable_diffusion/models/ldm/*
 glide_model_cache
