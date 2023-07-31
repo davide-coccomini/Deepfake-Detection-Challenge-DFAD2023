@@ -10,6 +10,7 @@ from torchsr.models import edsr_baseline
 from skimage.color import rgb2hsv, rgb2gray, rgb2yuv
 from skimage import color, exposure, transform
 from skimage.exposure import equalize_hist
+from albumentations import RandomCrop
 
 def isotropically_resize_image(img, size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC):
     h, w = img.shape[:2]
@@ -106,30 +107,39 @@ class RandomSizedCropNonEmptyMaskIfExists(DualTransform):
     def get_transform_init_args_names(self):
         return "min_max_height", "height", "width", "w2h_ratio"
 
+class CustomRandomCrop(DualTransform):
+    def __init__(self, size, p=0.5) -> None:
+        super(CustomRandomCrop, self).__init__()
+        self.size = size
+        self.prob = p
 
-class FFT(ImageOnlyTransform):
-    def __init__(self, safe_db_lists=[], prob =0.5) -> None:
+    def apply(self, img, copy=True, **params):
+        if img.shape[0] < self.size or img.shape[1] < self.size:
+            transform = IsotropicResize(max_side=self.size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR)
+        else:
+            transform = RandomCrop(self.size, self.size)
+        return np.asarray(transform(image=img)["image"])
+
+class FFT(DualTransform):
+    def __init__(self, p=0.5) -> None:
         super(FFT, self).__init__()
-        self.safe_db_lists = safe_db_lists
-        self.prob = prob
+        self.prob = p
 
     def apply(self, img, copy=True, **params):
         dark_image_grey_fourier = np.fft.fftshift(np.fft.fft2(rgb2gray(img)))
         mask = np.log(abs(dark_image_grey_fourier)).astype(np.uint8)
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
+        return np.asarray(cv2.bitwise_and(img, img, mask=mask))
 
-        return cv2.bitwise_and(img, img, mask=mask)
+class SR(DualTransform):
+    def __init__(self, model_sr,  p=0.5) -> None:
+        super(SR, self).__init__()
+        self.prob = p
+        self.model_sr = model_sr
 
-class SR(ImageOnlyTransform):
-    def __init__(self, safe_db_lists=[], prob =0.5) -> None:
-        super(FFT, self).__init__()
-        self.safe_db_lists = safe_db_lists
-        self.prob = prob
-
-    def apply(self, img, copy=True, **params):
+    def apply(self, img, copy=True ):
         img = np.transpose(img, (2, 0, 1))
         img = torch.tensor(img, dtype=torch.float).unsqueeze(0).to(opt.gpu_id)
-        model_edsr = params["model"]
-        sr_img = model_edsr(img)
+        sr_img = self.model_edsr(img)
         return sr_img.squeeze(0).permute(1, 2, 0).detach().cpu().numpy()
 
