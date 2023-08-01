@@ -1,0 +1,10 @@
+Namespace(config='configs/architecture.yaml', efficient_net=0, gpu_id=2, max_images=640, model=0, models_output_path='models', num_epochs=60, patience=5, random_state=42, resume='', training_csv='datasets/laion/training_set_3_cleaned.csv', validation_csv='../datasets/custom_validation_gan/validation_set.csv', workers=120)
+Loaded pretrained weights for efficientnet-b0
+Loaded pretrained weights for efficientnet-b0
+Train images: 640 Validation images: 640
+__TRAINING STATS__
+Counter({1: 334, 0: 306})
+Weights 0.9161676646706587
+10 10
+TRAINING
+VALIDATION

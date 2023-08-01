@@ -2,6 +2,7 @@ import random
 
 import cv2
 import numpy as np
+import torch
 from albumentations import DualTransform, ImageOnlyTransform
 from albumentations.augmentations.functional import crop
 
@@ -121,25 +122,30 @@ class CustomRandomCrop(DualTransform):
         return np.asarray(transform(image=img)["image"])
 
 class FFT(DualTransform):
-    def __init__(self, p=0.5) -> None:
+    def __init__(self, mode, p=0.5) -> None:
         super(FFT, self).__init__()
         self.prob = p
+        self.mode = mode
 
     def apply(self, img, copy=True, **params):
         dark_image_grey_fourier = np.fft.fftshift(np.fft.fft2(rgb2gray(img)))
         mask = np.log(abs(dark_image_grey_fourier)).astype(np.uint8)
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
-        return np.asarray(cv2.bitwise_and(img, img, mask=mask))
+        if self.mode == 0:
+            return np.asarray(cv2.bitwise_and(img, img, mask=mask))
+        else:
+            return np.asarray(mask)
 
 class SR(DualTransform):
-    def __init__(self, model_sr,  p=0.5) -> None:
+    def __init__(self, model_sr, p=0.5) -> None:
         super(SR, self).__init__()
         self.prob = p
         self.model_sr = model_sr
 
-    def apply(self, img, copy=True ):
+    def apply(self, img, copy=True, **params):
+        img = cv2.resize(img, (int(img.shape[1]/2), int(img.shape[0]/2)), interpolation = cv2.INTER_AREA)
         img = np.transpose(img, (2, 0, 1))
-        img = torch.tensor(img, dtype=torch.float).unsqueeze(0).to(opt.gpu_id)
-        sr_img = self.model_edsr(img)
+        img = torch.tensor(img, dtype=torch.float).unsqueeze(0).to(2)
+        sr_img = self.model_sr(img)
         return sr_img.squeeze(0).permute(1, 2, 0).detach().cpu().numpy()
 

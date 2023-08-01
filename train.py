@@ -23,23 +23,25 @@ from torchvision.models import resnet50, ResNet50_Weights
 import glob
 import pandas as pd
 import collections
+from torchsr.models import edsr_baseline
+from sklearn.metrics import f1_score
 
-
-ALLOWED_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif")
 
 if __name__ == "__main__":
     #os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
 
     parser = argparse.ArgumentParser()
-    parser.add_argument('--num_epochs', default=300, type=int,
+    parser.add_argument('--num_epochs', default=60, type=int,
                         help='Number of training epochs.')
     parser.add_argument('--workers', default=80, type=int,
                         help='Number of data loader workers.')
     parser.add_argument('--resume', default='', type=str, metavar='PATH',
                         help='Path to latest checkpoint (default: none).')
-    parser.add_argument('--training_path', default='datasets/laion', type=str, metavar='PATH',
-                        help='Path to the training images folder.')
+    parser.add_argument('--training_csv', default='datasets/laion/training_set_3_cleaned.csv', type=str, metavar='PATH',
+                        help='Path to the training csv file.')
     parser.add_argument('--validation_csv', default="../datasets/custom_validation_gan/validation_set.csv", type=str, metavar='PATH',
+                        help='Path to the validation csv file.')
+    parser.add_argument('--models_output_path', default="models", type=str, metavar='PATH',
                         help='Path to the validation csv file.')
     parser.add_argument('--max_images', type=int, default=-1, 
                         help="Maximum number of images to use for training (default: all).")
@@ -57,7 +59,6 @@ if __name__ == "__main__":
                         help='Random state value')
     opt = parser.parse_args()
     print(opt)
-
 
     torch.backends.cudnn.deterministic = True
     random.seed(opt.random_state)
@@ -85,20 +86,27 @@ if __name__ == "__main__":
     if opt.gpu_id == -1:
         model = torch.nn.DataParallel(model)
 
+    '''
+    model_sr = edsr_baseline(scale=2, pretrained=True)
+    model_sr = model_sr.eval()
+    model_sr = model_sr.to(device)
+    if opt.gpu_id == -1:
+        model_sr = torch.nn.DataParallel(model_sr)
+    '''
+    train_df = pd.read_csv(opt.training_csv, names=["path", "label"]) 
+    train_df = train_df.sample(frac = 1)
+    train_paths = train_df["path"].tolist()
+    train_labels = train_df['label'].tolist()
 
-    train_paths = glob.glob(os.path.join(opt.training_path, "real-images", "*/*"), recursive = True)
-    train_paths.extend(glob.glob(os.path.join(opt.training_path, "fake-images", "*/*"), recursive = True))
-    train_paths = [path for path in train_paths if path.lower().endswith(ALLOWED_EXTENSIONS)]
-    random.shuffle(train_paths)
     if opt.max_images > 0:
         train_paths = train_paths[:opt.max_images]
-    train_labels = [1. if "fake" in path else 0. for path in train_paths]
+        train_labels = train_labels[:opt.max_images]
 
     train_dataset = DeepFakesDataset(train_paths, train_labels, config['model']['image-size'])
-    dl = torch.utils.data.DataLoader(train_dataset, batch_size=config['training']['bs'], shuffle=True, sampler=None,
+    dl = torch.utils.data.DataLoader(train_dataset, batch_size=config['training']['bs'], shuffle=False, sampler=None,
                                     batch_sampler=None, num_workers=opt.workers, collate_fn=None,
                                     pin_memory=False, drop_last=False, timeout=0,
-                                    worker_init_fn=None, prefetch_factor=1,
+                                    worker_init_fn=None, prefetch_factor=2,
                                     persistent_workers=False)
 
     train_samples = len(train_dataset)
@@ -106,14 +114,19 @@ if __name__ == "__main__":
     val_df = val_df.sample(frac = 1)
     val_paths = val_df["path"].tolist()
     val_labels = val_df['label'].tolist()
+    if opt.max_images > 0:
+        val_paths = val_paths[:opt.max_images]
+        val_labels = val_labels[:opt.max_images]
+    correct_val_labels = val_labels
 
-    validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'], mode='validation')
-    val_dl = torch.utils.data.DataLoader(validation_dataset, batch_size=config['training']['bs'], shuffle=True, sampler=None,
+    validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'],  mode='validation')
+    val_dl = torch.utils.data.DataLoader(validation_dataset, batch_size=config['training']['bs'], shuffle=False, sampler=None,
                                     batch_sampler=None, num_workers=opt.workers, collate_fn=None,
                                     pin_memory=False, drop_last=False, timeout=0,
-                                    worker_init_fn=None, prefetch_factor=1,
+                                    worker_init_fn=None, prefetch_factor=2,
                                     persistent_workers=False)
-    
+    print(train_paths[:10])
+    print(val_paths[:10])
     validation_samples = len(validation_dataset)
 
     # Print some useful statistics
@@ -121,6 +134,14 @@ if __name__ == "__main__":
     print("__TRAINING STATS__")
     train_counters = collections.Counter(train_labels)
     print(train_counters)
+    class_weights = train_counters[0] / train_counters[1]
+    print("Weights", class_weights)
+
+    print("__VALIDATION STATS__")
+    val_counters = collections.Counter(val_labels)
+    print(val_counters)
+    print("___________________")
+
 
      # Init optimizers
     parameters =  model.parameters()
@@ -135,18 +156,18 @@ if __name__ == "__main__":
         print("Error: Invalid optimizer specified in the config file.")
         exit()
 
-    loss_fn = torch.nn.BCEWithLogitsLoss()
+    loss_fn = torch.nn.BCEWithLogitsLoss(pos_weight=torch.tensor([class_weights]))
 
     # Init LR schedulers
     if config['training']['scheduler'].lower() == 'steplr':   
         scheduler = lr_scheduler.StepLR(optimizer, step_size=config['training']['step-size'], gamma=config['training']['gamma'])
     elif config['training']['scheduler'].lower() == 'cosinelr':
         num_steps = int(opt.num_epochs * len(dl))
-        lr_scheduler = CosineLRScheduler(
+        scheduler = CosineLRScheduler(
                 optimizer,
                 t_initial=num_steps,
                 lr_min=config['training']['lr'] * 1e-2,
-                cycle_limit=1,
+                cycle_limit=2,
                 t_in_epochs=False,
         )
     else:
@@ -164,8 +185,7 @@ if __name__ == "__main__":
         counter = 0
         total_loss = 0
         total_val_loss = 0
-        
-        bar = ChargingBar('EPOCH #' + str(t), max=(int(len(dl)/config["training"]["bs"])+int(len(val_dl)/config["training"]["bs"])))
+        bar = ChargingBar('EPOCH #' + str(t), max=(int(len(dl))+int(len(val_dl))))
         train_correct = 0
         positive = 0
         negative = 0 
@@ -186,11 +206,22 @@ if __name__ == "__main__":
             optimizer.zero_grad()
             
             loss.backward()
-
+            if config['training']['scheduler'].lower() == 'cosinelr':
+                scheduler.step_update((t * (len(dl)) + index))
+            else:
+                scheduler.step()
             optimizer.step()
             counter += 1
             total_loss += round(loss.item(), 2)
+            
+            # Update time per epoch
+            time_diff = unix_time_millis(datetime.now() - start_time)
+
             bar.next()
+            # Print intermediate metrics
+            if index%1000 == 0:
+                expected_time = str(datetime.fromtimestamp((time_diff)*(len(dl)-index)/1000).strftime('%H:%M:%S.%f'))
+                print("\nLoss: ", total_loss/counter, "Accuracy: ", train_correct/(counter*config['training']['bs']) ,"Train 0s: ", negative, "Train 1s:", positive, "Expected Time:", expected_time)
 
             
         val_counter = 0
@@ -200,29 +231,32 @@ if __name__ == "__main__":
     
         train_correct /= train_samples
         total_loss /= counter
+        val_preds = []
         for index, (val_images, val_labels) in enumerate(val_dl):
-    
-            val_images = np.transpose(val_images, (0, 3, 1, 2))
-            
-            val_images = val_images.cuda()
-            val_labels = val_labels.unsqueeze(1)
-            val_pred = model(val_images)
-            val_pred = val_pred.cpu()
-            val_loss = loss_fn(val_pred, val_labels)
-            total_val_loss += round(val_loss.item(), 2)
-            corrects, positive_class, negative_class = check_correct(val_pred, val_labels)
-            val_correct += corrects
-            val_positive += positive_class
-            val_negative += negative_class
-            val_counter += 1
-            bar.next()
-            
-        scheduler.step()
+            with torch.no_grad():
+                val_images = np.transpose(val_images, (0, 3, 1, 2))
+                val_images = val_images.to(device)
+                val_labels = val_labels.unsqueeze(1)
+                val_pred = model(val_images)
+                val_pred = val_pred.cpu()
+                val_preds.extend(val_pred)
+                val_loss = loss_fn(val_pred, val_labels)
+                total_val_loss += round(val_loss.item(), 2)
+                corrects, positive_class, negative_class = check_correct(val_pred, val_labels)
+                val_correct += corrects
+                val_positive += positive_class
+                val_negative += negative_class
+                val_counter += 1
+                bar.next()
+   
         bar.finish()
         
 
         total_val_loss /= val_counter
         val_correct /= validation_samples
+        val_preds = [torch.sigmoid(torch.tensor(pred)) for pred in val_preds]
+
+        f1 = f1_score(correct_val_labels, [round(pred.item()) for pred in val_preds])
         if previous_loss <= total_val_loss:
             print("Validation loss did not improved")
             not_improved_loss += 1
@@ -231,20 +265,21 @@ if __name__ == "__main__":
             
             bar.next()
             train_images += images.shape[0]
-            time_diff = unix_time_millis(datetime.now() - start_time)
 
+
+        # Print metrics
+        print("#" + str(t) + "/" + str(opt.num_epochs) + " loss:" + str(total_loss) + " accuracy:" + str(train_correct) +" val_loss:" + str(total_val_loss) + " val_accuracy:" + str(val_correct) + " val_f1:", str(round(f1, 2)) + " val_0s:" + str(val_negative) + "/" + str(val_counters[0]) + " val_1s:" + str(val_positive) + "/" + str(val_counters[1]))
+    
+
+        # Save checkpoint if the model's validation loss is improving
+        if previous_loss > total_val_loss and t >= 30:
+            if opt.model == 0:
+                model_name = "CrossViT"
+            else:
+                model_name = "FFTResnet"
+            torch.save(model.state_dict(), os.path.join(opt.models_output_path, model_name + "_checkpoint" + str(t)))
+        
+        
         previous_loss = total_val_loss
 
-        # Print intermediate metrics
-        if index%100 == 0:
-            expected_time = str(datetime.fromtimestamp((time_diff)*((len(dl)/config['training']['bs'])-index)/1000).strftime('%H:%M:%S.%f'))
-            print("\nLoss: ", total_loss/counter, "Accuracy: ", train_correct/(counter*config['training']['bs']) ,"Train 0s: ", negative, "Train 1s:", positive, "Expected Time:", expected_time)
-
-        '''
-        # Save checkpoint if the model's validation loss is improving
-        if previous_loss > total_val_loss and t >= 20:
-            if opt.model != 2:
-                torch.save(features_extractor.state_dict(), os.path.join(opt.models_output_path,  "Extractor_checkpoint" + str(t)))
-            torch.save(model.state_dict(), os.path.join(opt.models_output_path,  "Model_checkpoint" + str(t)))
-        '''
     bar.finish()

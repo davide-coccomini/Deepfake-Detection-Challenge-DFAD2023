@@ -1,14 +1,11 @@
 training:
   lr: 0.01
   weight-decay: 0.0000001
-  bs: 16
+  bs: 64
   optimizer: 'SGD'
   scheduler: 'cosinelr' 
   gamma: 0.1
   step-size: 15
-  rebalancing-fake: 0.3
-  rebalancing-real: 1
-  frames-per-video: 30 # Equidistant frames
 
 model:
   image-size: 224
@@ -31,6 +28,6 @@ model:
   cross-attn-heads: 8    # cross attention heads
   lg-channels: 24
   sm-channels: 1280
-  dropout: 0.15
-  emb-dropout: 0.15
+  dropout: 0.05
+  emb-dropout: 0.05
   

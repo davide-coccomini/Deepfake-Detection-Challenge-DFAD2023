@@ -3,7 +3,7 @@ import shutil
 import random
 import pandas as pd
 from datasets import load_dataset
-
+import cv2
 REAL_IMAGES_PATH = "../datasets/custom_validation_gan/real_images"
 FAKE_IMAGES_PATH = "../datasets/custom_validation_gan/fake_images"
 DIFFUSED_PATHS = ["../datasets/diffused_coco/test", "../datasets/diffused_wikipedia/test", "../datasets/glide_diffused_coco/test", "../datasets/glide_diffused_wikipedia/test"]
@@ -45,7 +45,7 @@ for diffused_path in DIFFUSED_PATHS:
             break
         paths = os.listdir(folder_path)
         random.shuffle(paths)
-     
+        ignored_images = 0
         fake_image_found = False
         for index, image_name in enumerate(paths):
             if "jpg" not in image_name:
@@ -54,7 +54,12 @@ for diffused_path in DIFFUSED_PATHS:
             if "real" in image_name:
                 if src_path in already_seen_real_images or real_images == 1500:
                     continue
-                dst_path = os.path.join(REAL_IMAGES_PATH, str(real_image_index) + ".png")
+                try: 
+                    img = cv2.imread(src_path)
+                except:
+                    continue
+
+                dst_path = os.path.join(REAL_IMAGES_PATH, str(real_image_index) + ".jpg")
                 df = pd.concat([df, pd.DataFrame.from_records({"path": dst_path, "label": 0, "method": "N/A", "dataset": dataset}, index=[0])], ignore_index=True)
                 already_seen_real_images.append(src_path)
                 real_images += 1
@@ -62,7 +67,7 @@ for diffused_path in DIFFUSED_PATHS:
             else:
                 if fake_images == 1500 or fake_image_found:
                     continue
-                dst_path = os.path.join(FAKE_IMAGES_PATH, str(fake_image_index) + ".png")
+                dst_path = os.path.join(FAKE_IMAGES_PATH, str(fake_image_index) + ".jpg")
                 df = pd.concat([df, pd.DataFrame.from_records({"path": dst_path, "label": 1, "method": method, "dataset": dataset}, index=[0])], ignore_index=True)
                 fake_images += 1
                 fake_image_index += 1
@@ -83,8 +88,7 @@ for index, image_name in enumerate(paths):
     
     if index == 2500:
         break
-
-    dst_path = os.path.join(REAL_IMAGES_PATH, str(real_image_index) + ".png")
+    dst_path = os.path.join(REAL_IMAGES_PATH, str(real_image_index) + ".jpg")
     df = pd.concat([df, pd.DataFrame.from_records({"path": dst_path, "label": 0, "method": "N/A", "dataset": "Flickr50K"}, index=[0])], ignore_index=True)
     shutil.copy(src_path, dst_path)
     real_image_index += 1
@@ -113,11 +117,11 @@ for folder in os.listdir(GAN_IMAGES):
     random.shuffle(os.listdir(folder_path))
     for index, image_name in enumerate(paths):
         src_path = os.path.join(folder_path, image_name)
-        
+        _, ext =  os.path.splitext(src_path)
         if index == 500:
             break
 
-        dst_path = os.path.join(folder_path, str(fake_image_index) + ".png")
+        dst_path = os.path.join(folder_path, str(fake_image_index) + ext)
         df = pd.concat([df, pd.DataFrame.from_records({"path": dst_path, "label": 1, "method": method, "dataset": dataset}, index=[0])], ignore_index=True)
         shutil.copy(src_path, dst_path)
         fake_image_index += 1
