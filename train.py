@@ -12,6 +12,9 @@ from progress.bar import ChargingBar
 from albumentations import Cutout, CoarseDropout, RandomCrop, RandomGamma, MedianBlur, ISONoise, MultiplicativeNoise, ToSepia, RandomShadow, MultiplicativeNoise, RandomSunFlare, GlassBlur, RandomBrightness, MotionBlur, RandomRain, RGBShift, RandomFog, RandomContrast, Downscale, InvertImg, RandomContrast, ColorJitter, Compose, RandomBrightnessContrast, CLAHE, ISONoise, JpegCompression, HorizontalFlip, FancyPCA, HueSaturationValue, OneOf, ToGray, ShiftScaleRotate, ImageCompression, PadIfNeeded, GaussNoise, GaussianBlur, Rotate, Normalize, Resize
 from timm.scheduler.cosine_lr import CosineLRScheduler
 import cv2
+from multiprocessing import Manager
+from multiprocessing.pool import Pool
+from functools import partial
 import numpy as np
 from cross_efficient_vit import CrossEfficientViT
 import math
@@ -25,10 +28,19 @@ import pandas as pd
 import collections
 from torchsr.models import edsr_baseline
 from sklearn.metrics import f1_score
+import timm
+
+def read_images(path, dataset):
+    if "fake" in path:
+        label = 1
+    else:
+        label = 0
+    dataset.append([cv2.imread(path), label])
+    
 
 
 if __name__ == "__main__":
-    #os.environ["CUDA_VISIBLE_DEVICES"] = "5,6,7"
+    
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--num_epochs', default=60, type=int,
@@ -45,21 +57,24 @@ if __name__ == "__main__":
                         help='Path to the validation csv file.')
     parser.add_argument('--max_images', type=int, default=-1, 
                         help="Maximum number of images to use for training (default: all).")
+    parser.add_argument('--pre_load_images', default=False, action="store_true",
+                        help='Pre-load the images in memory (True) or load from path in the dataloader.')
     parser.add_argument('--config', type=str, 
                         help="Which configuration to use. See into 'config' folder.")
-    parser.add_argument('--gpu_id', default=2, type=int,
+    parser.add_argument('--gpu_id', default=4, type=int,
                         help='ID of GPU to be used.')
     parser.add_argument('--model', default=0, type=int,
-                        help='Model (0: Cross Efficient ViT; 1: FFT-Resnet50).')
+                        help='Model (0: Cross Efficient ViT; 1: Resnet50; 2: Swin).')
+    parser.add_argument('--image_mode', default=0, type=int,
+                        help='(0: Normal; 1: DCT)')
     parser.add_argument('--efficient_net', type=int, default=0, 
                         help="Which EfficientNet version to use (0 or 7, default: 0)")
-    parser.add_argument('--patience', type=int, default=5, 
+    parser.add_argument('--patience', type=int, default=10, 
                         help="How many epochs wait before stopping for validation loss not improving.")
     parser.add_argument('--random_state', default=42, type=int,
                         help='Random state value')
     opt = parser.parse_args()
     print(opt)
-
     torch.backends.cudnn.deterministic = True
     random.seed(opt.random_state)
     torch.manual_seed(opt.random_state)
@@ -72,20 +87,25 @@ if __name__ == "__main__":
  
     if opt.model == 0:
         model = CrossEfficientViT(config=config)
-    else:
+    elif opt.model == 1:
         model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         model.fc = torch.nn.Linear(2048, config['model']['num-classes'])
+    elif opt.model == 2:
+        model = timm.create_model('swin_base_patch4_window7_224.ms_in22k_ft_in1k', in_chans = 3, pretrained=True)
+        model.head.fc = torch.nn.Linear(1024, config['model']['num-classes'])
+        for index, (name, param) in enumerate(model.named_parameters()):
+            param.requires_grad = True
 
     if opt.gpu_id == -1:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
         device = opt.gpu_id
 
-    model = model.to(device)
 
     if opt.gpu_id == -1:
         model = torch.nn.DataParallel(model)
 
+    model = model.to(device)
     '''
     model_sr = edsr_baseline(scale=2, pretrained=True)
     model_sr = model_sr.eval()
@@ -95,42 +115,71 @@ if __name__ == "__main__":
     '''
     train_df = pd.read_csv(opt.training_csv, names=["path", "label"]) 
     train_df = train_df.sample(frac = 1)
-    train_paths = train_df["path"].tolist()
-    train_labels = train_df['label'].tolist()
 
-    if opt.max_images > 0:
-        train_paths = train_paths[:opt.max_images]
-        train_labels = train_labels[:opt.max_images]
+    if opt.pre_load_images:
+        train_paths = train_df["path"].tolist()
+        if opt.max_images > 0:
+            train_paths = train_paths[:opt.max_images]
+        mgr = Manager()
+        train_dataset = mgr.list()
+        print("Reading training images...")
+        with Pool(processes=opt.workers) as p:
+            with tqdm(total=len(train_paths)) as pbar:
+                for v in p.imap_unordered(partial(read_images, dataset=train_dataset),train_paths):
+                    pbar.update()
+        train_dataset = DeepFakesDataset([row[0] for row in train_dataset], [row[1] for row in train_dataset], config['model']['image-size'], pre_load_images = opt.pre_load_images, image_mode=opt.image_mode)
+    else:
+        train_paths = train_df["path"].tolist()
+        train_labels = train_df['label'].tolist()
+        if opt.max_images > 0:
+            train_paths = train_paths[:opt.max_images]
+            train_labels = train_labels[:opt.max_images]
+        train_dataset = DeepFakesDataset(train_paths, train_labels, config['model']['image-size'], pre_load_images = opt.pre_load_images, image_mode=opt.image_mode)
 
-    train_dataset = DeepFakesDataset(train_paths, train_labels, config['model']['image-size'])
     dl = torch.utils.data.DataLoader(train_dataset, batch_size=config['training']['bs'], shuffle=False, sampler=None,
                                     batch_sampler=None, num_workers=opt.workers, collate_fn=None,
                                     pin_memory=False, drop_last=False, timeout=0,
-                                    worker_init_fn=None, prefetch_factor=2,
+                                    worker_init_fn=None, prefetch_factor=1,
                                     persistent_workers=False)
 
     train_samples = len(train_dataset)
     val_df = pd.read_csv(opt.validation_csv)
     val_df = val_df.sample(frac = 1)
-    val_paths = val_df["path"].tolist()
-    val_labels = val_df['label'].tolist()
-    if opt.max_images > 0:
-        val_paths = val_paths[:opt.max_images]
-        val_labels = val_labels[:opt.max_images]
-    correct_val_labels = val_labels
 
-    validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'],  mode='validation')
+    if opt.pre_load_images:
+        val_paths = val_df["path"].tolist()
+        
+        validation_samples = len(val_paths)
+        if opt.max_images > 0:
+            val_paths = val_paths[:opt.max_images]
+
+        validation_dataset = mgr.list()
+        print("Reading validation images...")
+        with Pool(processes=opt.workers) as p:
+            with tqdm(total=len(val_paths)) as pbar:
+                for v in p.imap_unordered(partial(read_images, dataset=validation_dataset),val_paths):
+                    pbar.update()
+        correct_val_labels = [row[1] for row in validation_dataset]
+        validation_dataset = DeepFakesDataset([row[0] for row in validation_dataset], [row[1] for row in val_dataset], config['model']['image-size'], pre_load_images = opt.pre_load_images, mode='validation')
+    else:
+        val_paths = val_df["path"].tolist()
+        val_labels = val_df['label'].tolist()
+        if opt.max_images > 0:
+            val_paths = val_paths[:opt.max_images]
+            val_labels = val_labels[:opt.max_images]
+        validation_samples = len(val_paths)
+        correct_val_labels = val_labels
+        validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'],  mode='validation')
+
+
     val_dl = torch.utils.data.DataLoader(validation_dataset, batch_size=config['training']['bs'], shuffle=False, sampler=None,
-                                    batch_sampler=None, num_workers=opt.workers, collate_fn=None,
-                                    pin_memory=False, drop_last=False, timeout=0,
-                                    worker_init_fn=None, prefetch_factor=2,
-                                    persistent_workers=False)
-    print(train_paths[:10])
-    print(val_paths[:10])
-    validation_samples = len(validation_dataset)
-
+                                batch_sampler=None, num_workers=opt.workers, collate_fn=None,
+                                pin_memory=False, drop_last=False, timeout=0,
+                                worker_init_fn=None, prefetch_factor=2,
+                                persistent_workers=False)
+                                
     # Print some useful statistics
-    print("Train images:", len(train_dataset), "Validation images:", len(validation_dataset))
+    print("Train images:", train_samples, "Validation images:", validation_samples)
     print("__TRAINING STATS__")
     train_counters = collections.Counter(train_labels)
     print(train_counters)
@@ -219,7 +268,7 @@ if __name__ == "__main__":
 
             bar.next()
             # Print intermediate metrics
-            if index%1000 == 0:
+            if index%5 == 0:
                 expected_time = str(datetime.fromtimestamp((time_diff)*(len(dl)-index)/1000).strftime('%H:%M:%S.%f'))
                 print("\nLoss: ", total_loss/counter, "Accuracy: ", train_correct/(counter*config['training']['bs']) ,"Train 0s: ", negative, "Train 1s:", positive, "Expected Time:", expected_time)
 
@@ -272,11 +321,18 @@ if __name__ == "__main__":
     
 
         # Save checkpoint if the model's validation loss is improving
-        if previous_loss > total_val_loss and t >= 30:
+        if previous_loss > total_val_loss and t >= 3:
             if opt.model == 0:
                 model_name = "CrossViT"
-            else:
-                model_name = "FFTResnet"
+            elif opt.model == 1:
+                model_name = "Resnet50"
+            elif opt.model == 2:
+                model_name = "Swin"
+
+            
+            if opt.image_mode == 1:
+                model_name += "DCT"
+            
             torch.save(model.state_dict(), os.path.join(opt.models_output_path, model_name + "_checkpoint" + str(t)))
         
         

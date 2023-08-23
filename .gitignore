@@ -8,3 +8,8 @@ stable_diffusion/models/ldm/*
 glide_model_cache
 logs
 models
+*.png
+*.json
+*.csv
+*.txt
+

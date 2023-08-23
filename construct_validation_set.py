@@ -56,7 +56,11 @@ for diffused_path in DIFFUSED_PATHS:
                     continue
                 try: 
                     img = cv2.imread(src_path)
+                    if img is None:
+                        print(src_path, real_image_index)
+                        continue
                 except:
+                    print(src_path, real_image_index)
                     continue
 
                 dst_path = os.path.join(REAL_IMAGES_PATH, str(real_image_index) + ".jpg")

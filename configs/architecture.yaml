@@ -1,11 +1,14 @@
 training:
   lr: 0.01
   weight-decay: 0.0000001
-  bs: 64
+  bs: 128
   optimizer: 'SGD'
   scheduler: 'cosinelr' 
   gamma: 0.1
   step-size: 15
+  
+test:
+  bs: 1
 
 model:
   image-size: 224
