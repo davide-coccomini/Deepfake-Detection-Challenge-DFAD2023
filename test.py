@@ -192,8 +192,8 @@ if __name__ == "__main__":
             images = np.transpose(images, (0, 3, 1, 2))
             images = images.to(device)
             if opt.ensemble:
-                #images_fft = np.transpose(images_fft, (0, 3, 1, 2))
-                #images_fft = images_fft.to(device)
+                images_dct = np.transpose(images_dct, (0, 3, 1, 2))
+                images_dct = images_dct.to(device)
                 tmp_preds = []
                 tmp_preds.append(torch.sigmoid(models[0](images).cpu()).item())
                 tmp_preds.append(torch.sigmoid(models[1](images).cpu()).item())
