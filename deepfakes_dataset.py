@@ -47,6 +47,7 @@ class DeepFakesDataset(Dataset):
                     RandomGamma(p=0.1),
                     ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
                     FFT(mode=0, p=0.05),
+                    #DCT(mode=0, p=0.05)
                     #SR(model_sr=self.model_sr, p=0.03)
                 ]
                 )
@@ -72,7 +73,7 @@ class DeepFakesDataset(Dataset):
                 RandomShadow(p=0.05),
                 RandomGamma(p=0.1),
                 ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
-                DCT(mode=0, p=1)
+                DCT(mode=1, p=1)
             ])
             
     def create_val_transform(self, size, image_mode = 0):
@@ -107,7 +108,7 @@ class DeepFakesDataset(Dataset):
             return torch.tensor(image).float(), float(label)
         else:
             images = [transform1(image=image)['image'], transform2(image=image)['image']]
-            return torch.tensor(images[0]).float(), torch.tensor(images[1]).float(), self.x[index], float(label), self.methods[i]
+            return torch.tensor(images[0]).float(), torch.tensor(images[1]).float(), self.x[index], float(label), self.methods[index]
 
 
 

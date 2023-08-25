@@ -96,6 +96,13 @@ if __name__ == "__main__":
         for index, (name, param) in enumerate(model.named_parameters()):
             param.requires_grad = True
 
+    starting_epoch = 0
+    if os.path.exists(opt.resume):
+        model.load_state_dict(torch.load(opt.resume))
+        starting_epoch = int(opt.resume.split("checkpoint")[1]) + 1 # The checkpoint's file name format should be "checkpoint_EPOCH"
+        print("Weights loaded.")
+
+
     if opt.gpu_id == -1:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     else:
@@ -104,6 +111,7 @@ if __name__ == "__main__":
 
     if opt.gpu_id == -1:
         model = torch.nn.DataParallel(model)
+
 
     model = model.to(device)
     '''
@@ -160,7 +168,7 @@ if __name__ == "__main__":
                 for v in p.imap_unordered(partial(read_images, dataset=validation_dataset),val_paths):
                     pbar.update()
         correct_val_labels = [row[1] for row in validation_dataset]
-        validation_dataset = DeepFakesDataset([row[0] for row in validation_dataset], [row[1] for row in val_dataset], config['model']['image-size'], pre_load_images = opt.pre_load_images, mode='validation')
+        validation_dataset = DeepFakesDataset([row[0] for row in validation_dataset], [row[1] for row in val_dataset], config['model']['image-size'], pre_load_images = opt.pre_load_images, mode='validation', image_mode = opt.image_mode)
     else:
         val_paths = val_df["path"].tolist()
         val_labels = val_df['label'].tolist()
@@ -169,7 +177,7 @@ if __name__ == "__main__":
             val_labels = val_labels[:opt.max_images]
         validation_samples = len(val_paths)
         correct_val_labels = val_labels
-        validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'],  mode='validation')
+        validation_dataset = DeepFakesDataset(val_paths, val_labels, config['model']['image-size'],  mode='validation',  image_mode = opt.image_mode)
 
 
     val_dl = torch.utils.data.DataLoader(validation_dataset, batch_size=config['training']['bs'], shuffle=False, sampler=None,
@@ -227,7 +235,7 @@ if __name__ == "__main__":
     counter = 0
     not_improved_loss = 0
     previous_loss = math.inf   
-    for t in range(0, opt.num_epochs + 1):
+    for t in range(starting_epoch, opt.num_epochs + 1):
         if not_improved_loss == opt.patience:
             break
 
@@ -331,7 +339,7 @@ if __name__ == "__main__":
 
             
             if opt.image_mode == 1:
-                model_name += "DCT"
+                model_name += "DCTfull"
             
             torch.save(model.state_dict(), os.path.join(opt.models_output_path, model_name + "_checkpoint" + str(t)))
         

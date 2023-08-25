@@ -21,7 +21,7 @@ from cross_efficient_vit import CrossEfficientViT
 import math
 import random
 import os
-from utils import check_correct, unix_time_millis
+from utils import check_correct, unix_time_millis, custom_round
 from datetime import datetime, timedelta
 from torchvision.models import resnet50, ResNet50_Weights
 import glob
@@ -40,8 +40,8 @@ if __name__ == "__main__":
                         help='Path to the test images.')
     parser.add_argument('--correct_labels_csv', default='', type=str, metavar='PATH',
                         help='Path to the labels csv file if available.')
-    parser.add_argument('--output_path', default="predictions.csv", type=str, metavar='PATH',
-                        help='Path to the output csv file.')
+    parser.add_argument('--output_path', default="predictions.json", type=str, metavar='PATH',
+                        help='Path to the output json file.')
     parser.add_argument('--max_images', type=int, default=-1, 
                         help="Maximum number of images to use for training (default: all).")
     parser.add_argument('--ensemble', default=False, action="store_true",
@@ -54,8 +54,6 @@ if __name__ == "__main__":
                         help='ID of GPU to be used.')
     parser.add_argument('--model', default=0, type=int,
                         help='Model (0: Cross Efficient ViT; 1: Resnet50; 2: Swin).')
-    parser.add_argument('--image-mode', default=0, type=int,
-                        help='(0: Normal; 1: DCT)')
     parser.add_argument('--random_state', default=42, type=int,
                         help='Random state value')
     parser.add_argument('--threshold', default=0.5, type=float,
@@ -64,6 +62,8 @@ if __name__ == "__main__":
                         help='Model 1 weights.')
     parser.add_argument('--model2_weights', type=str, default="",
                         help='Model 2 weights.')
+    parser.add_argument('--model3_weights', type=str, default="",
+                        help='Model 3 weights.')
     opt = parser.parse_args()
     print(opt)
     torch.backends.cudnn.deterministic = True
@@ -84,17 +84,18 @@ if __name__ == "__main__":
 
     
     if opt.error_analysis and config['test']['bs'] > 1:
-        except("The error analysis is available only with batch size equal to 1.")
+        raise Exception("The error analysis is available only with batch size equal to 1.")
 
     if opt.ensemble:
         model = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         model.fc = torch.nn.Linear(2048, config['model']['num-classes'])
-    
+        model.eval()
         model2 = timm.create_model('swin_base_patch4_window7_224.ms_in22k_ft_in1k', in_chans = 3, pretrained=True)
         model2.head.fc = torch.nn.Linear(1024, config['model']['num-classes'])
-
-        model3 = timm.create_model('swin_base_patch4_window7_224.ms_in22k_ft_in1k', in_chans = 3, pretrained=True)
-        model3.head.fc = torch.nn.Linear(1024, config['model']['num-classes'])
+        model2.eval()
+        model3 = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+        model3.fc = torch.nn.Linear(2048, config['model']['num-classes'])
+        model3.eval()
 
         models = [model.to(device), model2.to(device), model3.to(device)]
         
@@ -129,8 +130,7 @@ if __name__ == "__main__":
         else:
             raise Exception("No checkpoint loaded for the model.")    
 
-
-    model.eval()
+        model.eval()
     
     if opt.gpu_id == -1:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -174,7 +174,7 @@ if __name__ == "__main__":
                                 pin_memory=False, drop_last=False, timeout=0,
                                 worker_init_fn=None, prefetch_factor=2,
                                 persistent_workers=False)
-    if error_analysis:
+    if opt.error_analysis:
         errors = {}
 
     bar = ChargingBar('PREDICT', max=(len(test_dl)))
@@ -195,9 +195,10 @@ if __name__ == "__main__":
                 images_dct = np.transpose(images_dct, (0, 3, 1, 2))
                 images_dct = images_dct.to(device)
                 tmp_preds = []
-                tmp_preds.append(torch.sigmoid(models[0](images).cpu()).item())
+                #tmp_preds.append(mean([torch.sigmoid(models[0](images).cpu()).item(), torch.sigmoid(models[1](images).cpu()).item()]))
+                #tmp_preds.append(torch.sigmoid(models[0](images).cpu()).item())
                 tmp_preds.append(torch.sigmoid(models[1](images).cpu()).item())
-                tmp_preds.append(torch.sigmoid(models[2](images_dct).cpu()).item())
+                tmp_preds.append(torch.sigmoid(models[2](images).cpu()).item())
                 y_pred = mean(tmp_preds)
                 preds.extend([y_pred])
                 correct_test_labels.extend(labels)
@@ -234,9 +235,9 @@ if __name__ == "__main__":
         f.write("{")
         for i in range(len(names)):
             if opt.ensemble:
-                f.write("\n\"" + names[i] + "\": " + str(round(preds[i])) + ",")
+                f.write("\n\"" + names[i] + "\": " + str(custom_round(preds[i], opt.threshold)) + ",")
             else:
-                f.write("\n\"" + names[i] + "\": " + str(round(preds[i].item())) + ",")
+                f.write("\n\"" + names[i] + "\": " + str(custom_round(preds[i].item(), opt.threshold)) + ",")
         f.write("\n}")
     f.close()
     
@@ -244,13 +245,13 @@ if __name__ == "__main__":
     correct_test_labels = [int(label.item()) for label in correct_test_labels]
     if opt.correct_labels_csv != "":
         if opt.ensemble:
-            fpr, tpr, th = roc_curve(correct_test_labels, [round(pred) for pred in preds])
+            fpr, tpr, th = roc_curve(correct_test_labels, [custom_round(pred, opt.threshold) for pred in preds])
             auc = auc(fpr, tpr)
-            f1 = f1_score(correct_test_labels,  [round(pred) for pred in preds])
+            f1 = f1_score(correct_test_labels,  [custom_round(pred, opt.threshold) for pred in preds])
         else:
-            fpr, tpr, th = roc_curve(correct_test_labels, [round(pred.item()) for pred in preds])
+            fpr, tpr, th = roc_curve(correct_test_labels, [custom_round(pred.item(), opt.threshold) for pred in preds])
             auc = auc(fpr, tpr)
-            f1 = f1_score(correct_test_labels,  [round(pred.item()) for pred in preds])
+            f1 = f1_score(correct_test_labels,  [custom_round(pred.item(), opt.threshold) for pred in preds])
         bar.finish()
         test_correct /= test_samples
         print("F1 score: " + str(f1) + " test accuracy:" + str(test_correct) + " test_0s:" + str(test_negative) + "/" + str(test_counters[0]) + " test_1s:" + str(test_positive) + "/" + str(test_counters[1]) + " AUC " + str(auc))

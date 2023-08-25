@@ -30,7 +30,15 @@ def unix_time_millis(dt):
     return dt.total_seconds() * 1000.0
 
 def custom_round(value, threshold):
-    if value > threshold:
-        return 1
+    if type(value) == list:
+        result = []
+        for v in value:
+            if v > threshold:
+                result.append(1)
+            else:
+                result.append(0)
     else:
-        return 0
+        if value > threshold:
+            return 1
+        else:
+            return 0

@@ -167,8 +167,8 @@ class DCT(DualTransform):
 
         gray_img = self.rgb2gray(img)
         dct_coefficients = dct(dct(gray_img, axis=0, norm='ortho'), axis=1, norm='ortho')
-
-        mask = np.log(np.abs(dct_coefficients)).astype(np.uint8)
+        epsilon = 1e-10
+        mask = np.log(np.abs(dct_coefficients)+epsilon).astype(np.uint8)
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
         
         if self.mode == 0:
