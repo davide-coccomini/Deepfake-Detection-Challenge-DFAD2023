@@ -8,27 +8,27 @@ In order to ensure a good generalisation of the model, a very thorough data augm
 
 ```
 ImageCompression(quality_lower=40, quality_upper=100, p=0.1),
-                HorizontalFlip(),
-                GaussNoise(p=0.3),
-                ISONoise(p=0.3),
-                MultiplicativeNoise(p=0.3),
-                OneOf([
-                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
-                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_LINEAR),
-                    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR),
-                    CustomRandomCrop(size=size)
-                ], p=1),
-                Resize(height=size, width=size),
-                PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
-                OneOf([RandomBrightnessContrast(), RandomContrast(), RandomBrightness(), FancyPCA(), HueSaturationValue()], p=0.5),
-                OneOf([Cutout(), CoarseDropout()], p=0.05),
-                ToGray(p=0.1),
-                ToSepia(p=0.05),
-                RandomShadow(p=0.05),
-                RandomGamma(p=0.1),
-                ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
-                FFT(mode=0, p=0.05),
-                DCT(mode=1, p=0.5)
+HorizontalFlip(),
+GaussNoise(p=0.3),
+ISONoise(p=0.3),
+MultiplicativeNoise(p=0.3),
+OneOf([
+    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
+    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_LINEAR),
+    IsotropicResize(max_side=size, interpolation_down=cv2.INTER_LINEAR, interpolation_up=cv2.INTER_LINEAR),
+    CustomRandomCrop(size=size)
+], p=1),
+Resize(height=size, width=size),
+PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
+OneOf([RandomBrightnessContrast(), RandomContrast(), RandomBrightness(), FancyPCA(), HueSaturationValue()], p=0.5),
+OneOf([Cutout(), CoarseDropout()], p=0.05),
+ToGray(p=0.1),
+ToSepia(p=0.05),
+RandomShadow(p=0.05),
+RandomGamma(p=0.1),
+ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
+FFT(mode=0, p=0.05),
+DCT(mode=1, p=0.5)
 ```
 
 The image during training is then randomly transformed resulting in multiple variants:
@@ -43,7 +43,7 @@ The image during training is then randomly transformed resulting in multiple var
 ## Architecture
 ![alt text](images/swin.png)
 
-We used different architectures in our experiments, but the one that proved to be the most effective was the Swin Transformer [5] architecture, as also previously seen in [2,6].
+We used different architectures in our experiments, but the one that proved to be the most effective was the Swin Transformer [5] architecture, as also previously seen in [3,6].
 
 
 ## Validation set
