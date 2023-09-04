@@ -51,7 +51,7 @@ class DeepFakesDataset(Dataset):
                     #SR(model_sr=self.model_sr, p=0.03)
                 ]
                 )
-        else:
+        elif image_mode == 1:
             return Compose([
                 ImageCompression(quality_lower=40, quality_upper=100, p=0.1),
                 HorizontalFlip(),
@@ -73,7 +73,13 @@ class DeepFakesDataset(Dataset):
                 RandomShadow(p=0.05),
                 RandomGamma(p=0.1),
                 ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=10, border_mode=cv2.BORDER_CONSTANT, p=0.5),
-                DCT(mode=1, p=1)
+                FFT(mode=0, p=0.05),
+                DCT(mode=1, p=0.5)
+            ])
+        else:
+            return Compose([
+                IsotropicResize(max_side=size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC),
+                PadIfNeeded(min_height=size, min_width=size, border_mode=cv2.BORDER_CONSTANT),
             ])
             
     def create_val_transform(self, size, image_mode = 0):
@@ -104,7 +110,10 @@ class DeepFakesDataset(Dataset):
             transform2 = self.create_val_transform(self.image_size, 1)
         
         if self.mode != "test":
+            #cv2.imwrite("image2.png", image)
             image = transform(image=image)['image']
+            #cv2.imwrite("imagedct2.png", image)
+
             return torch.tensor(image).float(), float(label)
         else:
             images = [transform1(image=image)['image'], transform2(image=image)['image']]

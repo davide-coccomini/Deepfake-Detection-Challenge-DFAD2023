@@ -93,10 +93,14 @@ if __name__ == "__main__":
         model2 = timm.create_model('swin_base_patch4_window7_224.ms_in22k_ft_in1k', in_chans = 3, pretrained=True)
         model2.head.fc = torch.nn.Linear(1024, config['model']['num-classes'])
         model2.eval()
+        '''
         model3 = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
         model3.fc = torch.nn.Linear(2048, config['model']['num-classes'])
         model3.eval()
-
+        '''
+        model3 = timm.create_model('swin_base_patch4_window7_224.ms_in22k_ft_in1k', in_chans = 3, pretrained=True)
+        model3.head.fc = torch.nn.Linear(1024, config['model']['num-classes'])
+        model3.eval()
         models = [model.to(device), model2.to(device), model3.to(device)]
         
         if os.path.exists(opt.model1_weights):
@@ -196,7 +200,7 @@ if __name__ == "__main__":
                 images_dct = images_dct.to(device)
                 tmp_preds = []
                 #tmp_preds.append(mean([torch.sigmoid(models[0](images).cpu()).item(), torch.sigmoid(models[1](images).cpu()).item()]))
-                #tmp_preds.append(torch.sigmoid(models[0](images).cpu()).item())
+                tmp_preds.append(torch.sigmoid(models[0](images).cpu()).item())
                 tmp_preds.append(torch.sigmoid(models[1](images).cpu()).item())
                 tmp_preds.append(torch.sigmoid(models[2](images).cpu()).item())
                 y_pred = mean(tmp_preds)

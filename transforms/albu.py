@@ -12,7 +12,7 @@ from skimage.color import rgb2hsv, rgb2gray, rgb2yuv
 from skimage import color, exposure, transform
 from skimage.exposure import equalize_hist
 from albumentations import RandomCrop
-from scipy.fftpack import dct
+from scipy.fftpack import dct, idct
 
 def isotropically_resize_image(img, size, interpolation_down=cv2.INTER_AREA, interpolation_up=cv2.INTER_CUBIC):
     h, w = img.shape[:2]
@@ -111,7 +111,7 @@ class RandomSizedCropNonEmptyMaskIfExists(DualTransform):
 
 class CustomRandomCrop(DualTransform):
     def __init__(self, size, p=0.5) -> None:
-        super(CustomRandomCrop, self).__init__()
+        super(CustomRandomCrop, self).__init__(p=p)
         self.size = size
         self.prob = p
 
@@ -124,7 +124,7 @@ class CustomRandomCrop(DualTransform):
 
 class FFT(DualTransform):
     def __init__(self, mode, p=0.5) -> None:
-        super(FFT, self).__init__()
+        super(FFT, self).__init__(p=p)
         self.prob = p
         self.mode = mode
 
@@ -141,7 +141,7 @@ class FFT(DualTransform):
 
 class SR(DualTransform):
     def __init__(self, model_sr, p=0.5) -> None:
-        super(SR, self).__init__()
+        super(SR, self).__init__(p=p)
         self.prob = p
         self.model_sr = model_sr
 
@@ -155,29 +155,27 @@ class SR(DualTransform):
 
 class DCT(DualTransform):
     def __init__(self, mode, p=0.5) -> None:
-        super(DCT, self).__init__()
+        super(DCT, self).__init__(p=p)
         self.prob = p
         self.mode = mode
 
-
     def rgb2gray(self, rgb):
-        return np.dot(rgb[..., :3], [0.2989, 0.5870, 0.1140])
+        return cv2.cvtColor(rgb, cv2.COLOR_BGR2GRAY)
 
     def apply(self, img, copy=True, **params):
-
         gray_img = self.rgb2gray(img)
-        dct_coefficients = dct(dct(gray_img, axis=0, norm='ortho'), axis=1, norm='ortho')
-        epsilon = 1e-10
-        mask = np.log(np.abs(dct_coefficients)+epsilon).astype(np.uint8)
+        dct_coefficients = cv2.dct(cv2.dct(np.float32(gray_img), flags=cv2.DCT_ROWS), flags=cv2.DCT_ROWS)
+        epsilon = 1
+        mask = np.log(np.abs(dct_coefficients) + epsilon).astype(np.uint8)
         mask = cv2.resize(mask, (img.shape[1], img.shape[0]))
-        
-        if self.mode == 0:
-            return np.asarray(cv2.bitwise_and(img, img, mask=mask))
-        else:
-            mask = np.asarray(mask)
-            image = cv2.merge((mask, mask, mask))
-            return image
 
+
+        if self.mode == 0:
+            return cv2.bitwise_and(img, img, mask=mask)
+        else:
+            dct_coefficients = np.asarray(dct_coefficients)
+            image = cv2.merge((dct_coefficients, dct_coefficients, dct_coefficients))
+            return image
 
 
 

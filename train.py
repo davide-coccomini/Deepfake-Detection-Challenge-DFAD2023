@@ -248,6 +248,7 @@ if __name__ == "__main__":
         negative = 0 
         train_images = 0
         for index, (images, labels) in enumerate(dl):
+            
             start_time = datetime.now()
             labels = labels.unsqueeze(1)
             images = np.transpose(images, (0, 3, 1, 2))
@@ -340,7 +341,8 @@ if __name__ == "__main__":
             
             if opt.image_mode == 1:
                 model_name += "DCTfull"
-            
+            elif opt.image_mode == 2:
+                model_name += "noaug"
             torch.save(model.state_dict(), os.path.join(opt.models_output_path, model_name + "_checkpoint" + str(t)))
         
         
