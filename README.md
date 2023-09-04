@@ -1,4 +1,8 @@
 # DFAD 2023 - Challenge on DeepFake Analysis and Detection - Elsa Media Analytics
+Davide Alessandro Coccomini, Giuseppe Amato, Fabrizio Falchi and Claudio Gennaro
+
+ISTI-CNR
+
 
 ## Introduction
 Code for the classifier used in the competition of Workshop and Challenge on DeepFake Analysis and Detection (DFAD 2023) organized during the International Conference on Computer Vision (ICCV 2023) in Paris. 
