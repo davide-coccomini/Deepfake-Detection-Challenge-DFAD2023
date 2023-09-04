@@ -4,7 +4,7 @@
 Code for the classifier used in the competition of Workshop and Challenge on DeepFake Analysis and Detection (DFAD 2023) organized during the International Conference on Computer Vision (ICCV 2023) in Paris. 
 
 ## Data augmentation
-In order to ensure a good generalisation of the model, a very thorough data augmentation was carried out based on [1,3,4,5]. We have explored various ways of data augmentation, but the most complete and effective one is the one based on the following code inside deepfakes_dataset.py:
+In order to ensure a good generalisation of the model, a very thorough data augmentation was carried out based on [1,4,7,8]. We have explored various ways of data augmentation, but the most complete and effective one is the one based on the following code inside deepfakes_dataset.py:
 
 ```
 ImageCompression(quality_lower=40, quality_upper=100, p=0.1),
@@ -121,3 +121,6 @@ You can customize the following parameters for a specific evaluation:
 
 [6] Coccomini, D.A.; Caldelli, R.; Falchi, F.; Gennaro, C. Cross-Forgery Analysis of Vision Transformers and CNNs for Deepfake Image Detection, MAD '22: Proceedings of the 1st International Workshop on Multimedia AI against Disinformation, 2022
 
+[7] Coccomini, D.A., Messina, N., Gennaro, C., Falchi, F. (2022). Combining EfficientNet and Vision Transformers for Video Deepfake Detection. In: Sclaroff, S., Distante, C., Leo, M., Farinella, G.M., Tombari, F. (eds) Image Analysis and Processing – ICIAP 2022. ICIAP 2022. Lecture Notes in Computer Science, vol 13233. Springer, Cham.
+
+[8] Guarnera, L.; Giudice, O.; Guarnera, F.; Ortis, A.; Puglisi, G.; Paratore, A.; Bui, L.M.Q.; Fontani, M.; Coccomini, D.A.; Caldelli, R.; et al. The Face Deepfake Detection Challenge. J. Imaging 2022, 8, 263.
