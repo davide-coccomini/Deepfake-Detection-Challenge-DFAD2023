@@ -85,6 +85,8 @@ You can customize the following parameters for a specific training:
 - --patience: To specify how many epochs wait before stopping the training (default: 10)
 - --random_state: Random state value (default: 42)
 
+You can find a pre-trained model here: https://drive.google.com/file/d/1maWSIXp5qjHTrI4vFSxtWxaceKqijhB-/view?usp=sharing
+
 ## Evaluation
 
 To run the evaluation use the following command:
